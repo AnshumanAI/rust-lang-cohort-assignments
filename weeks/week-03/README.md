@@ -7,16 +7,25 @@ This assignment covers:
 - Structs with named fields
 - Enums and pattern matching
 - Methods on structs and enums
+- Deriving `Serialize` and `Deserialize` with Serde
+- Using `uuid` to give transaction outputs stable unique ids
 - Borrowed lookups with `Option`
 - Static dispatch through generic trait bounds
 - Dynamic dispatch through `Box<dyn Trait>`
 - Iterator chains over nested transaction data
 
-The goal is to model a small Bitcoin-like library without networking, mining, serialization, or external crates.
+The goal is to model a small Bitcoin-like library without networking or mining. From this week onward, external crates are allowed when they match the book project.
 
 ## Student Work
 
 Open `src/lib.rs` and implement the TODOs. Keep all public names and signatures unchanged.
+
+This week uses:
+
+- `serde` for data model derives
+- `uuid` for `TxOutput::unique_id`
+
+Do not add more crates for this assignment.
 
 The validation rules are intentionally small:
 

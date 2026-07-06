@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use week_03_modeling::*;
 
 fn input(previous_txid: &str, previous_vout: u32) -> TxInput {
@@ -10,6 +11,7 @@ fn input(previous_txid: &str, previous_vout: u32) -> TxInput {
 fn output(value_sats: u64, recipient: &str, status: TxStatus) -> TxOutput {
     TxOutput {
         value_sats,
+        unique_id: Uuid::from_u128(value_sats as u128 + recipient.len() as u128),
         recipient: recipient.to_string(),
         status,
     }
@@ -67,6 +69,7 @@ fn tx_input_new_copies_previous_vout() {
 fn tx_output_new_copies_fields() {
     let output = TxOutput::new(500, "alice", TxStatus::Unspent);
     assert_eq!(output.value_sats, 500);
+    assert_ne!(output.unique_id, Uuid::nil());
     assert_eq!(output.recipient, "alice");
     assert_eq!(output.status, TxStatus::Unspent);
 }

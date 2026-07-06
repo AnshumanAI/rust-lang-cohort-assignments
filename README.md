@@ -8,8 +8,8 @@ Each week is a separate Cargo library crate under `weeks/`. The starter code liv
 
 - `weeks/week-01`: Rust syntax, primitives, vectors, hash maps, and simple Bitcoin data.
 - `weeks/week-02`: Ownership, borrowing, string slices, basic lifetimes, and small utilities.
-- `weeks/week-03`: Structs, enums, pattern matching, dispatch, and Bitcoin domain modeling.
-- `weeks/week-04`: Traits, generics, iterators, `Option`, `Result`, and zero-panic parsing.
+- `weeks/week-03`: Structs, enums, pattern matching, Serde derives, UUIDs, dispatch, and Bitcoin domain modeling.
+- `weeks/week-04`: Extends the Week 3 model with parsing, validation, `thiserror`, SHA-256 hashing, hex decoding, and block-building helpers.
 
 ## Running Tests
 

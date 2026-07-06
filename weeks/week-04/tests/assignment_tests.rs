@@ -1,39 +1,143 @@
 use std::io;
 
+use uuid::Uuid;
 use week_04_errors_traits::*;
 
-fn tx(txid: &str, amount_sats: u64, status: TxStatus) -> Transaction {
-    Transaction {
-        txid: txid.to_string(),
-        amount_sats,
+fn input(previous_txid: &str, previous_vout: u32) -> TxInput {
+    TxInput {
+        previous_txid: previous_txid.to_string(),
+        previous_vout,
+    }
+}
+
+fn output(value_sats: u64, recipient: &str, status: TxStatus) -> TxOutput {
+    TxOutput {
+        value_sats,
+        unique_id: Uuid::from_u128(value_sats as u128 + recipient.len() as u128),
+        recipient: recipient.to_string(),
         status,
     }
 }
 
-fn expected_hash(material: &str) -> u64 {
-    let mut hash = 0_u64;
-    for byte in material.bytes() {
-        hash = hash.wrapping_mul(31).wrapping_add(u64::from(byte));
+fn coinbase_tx() -> Transaction {
+    Transaction {
+        txid: "coinbase".to_string(),
+        inputs: vec![],
+        outputs: vec![output(5_000, "alice", TxStatus::Unspent)],
     }
-    hash
+}
+
+fn spend_tx(txid: &str) -> Transaction {
+    Transaction {
+        txid: txid.to_string(),
+        inputs: vec![input("coinbase", 0)],
+        outputs: vec![
+            output(1_200, "bob", TxStatus::Unspent),
+            output(300, "alice", TxStatus::Spent),
+        ],
+    }
+}
+
+fn header(block_hash: &str) -> BlockHeader {
+    BlockHeader {
+        block_hash: block_hash.to_string(),
+        previous_block_hash: "prev".to_string(),
+        merkle_root: "root".to_string(),
+        timestamp: 1_700_000_000,
+        nonce: 42,
+    }
 }
 
 fn sample_transactions() -> Vec<Transaction> {
-    vec![
-        tx("tx1", 500, TxStatus::Unspent),
-        tx("tx2", 200, TxStatus::Spent),
-        tx("tx3", 700, TxStatus::Unspent),
-    ]
+    vec![coinbase_tx(), spend_tx("tx1"), spend_tx("tx2")]
+}
+
+fn sample_block() -> Block {
+    Block {
+        header: header("block-1"),
+        transactions: sample_transactions(),
+        height: 1,
+        network: Network::Regtest,
+    }
 }
 
 #[test]
-fn parse_status_accepts_spent() {
-    assert_eq!(parse_status("spent"), Ok(TxStatus::Spent));
+fn tx_input_new_copies_fields() {
+    let input = TxInput::new("abc", 2);
+    assert_eq!(input.previous_txid, "abc");
+    assert_eq!(input.previous_vout, 2);
 }
 
 #[test]
-fn parse_status_accepts_unspent() {
-    assert_eq!(parse_status("unspent"), Ok(TxStatus::Unspent));
+fn tx_output_new_copies_fields_and_generates_uuid() {
+    let output = TxOutput::new(500, "alice", TxStatus::Unspent);
+    assert_eq!(output.value_sats, 500);
+    assert_ne!(output.unique_id, Uuid::nil());
+    assert_eq!(output.recipient, "alice");
+    assert_eq!(output.status, TxStatus::Unspent);
+}
+
+#[test]
+fn tx_output_is_unspent_matches_status() {
+    assert!(output(1, "alice", TxStatus::Unspent).is_unspent());
+    assert!(!output(1, "alice", TxStatus::Spent).is_unspent());
+}
+
+#[test]
+fn transaction_total_output_value_sums_outputs() {
+    assert_eq!(spend_tx("tx1").total_output_value(), 1_500);
+}
+
+#[test]
+fn transaction_counts_unspent_outputs() {
+    assert_eq!(spend_tx("tx1").unspent_output_count(), 1);
+}
+
+#[test]
+fn transaction_validate_accepts_coinbase_transaction() {
+    assert_eq!(coinbase_tx().validate(), Ok(()));
+}
+
+#[test]
+fn transaction_validate_accepts_regular_transaction() {
+    assert_eq!(spend_tx("tx1").validate(), Ok(()));
+}
+
+#[test]
+fn transaction_validate_rejects_missing_inputs_for_regular_tx() {
+    let transaction = Transaction {
+        txid: "regular".to_string(),
+        inputs: vec![],
+        outputs: vec![output(1, "alice", TxStatus::Unspent)],
+    };
+    assert_eq!(transaction.validate(), Err(BtcLibError::MissingInputs));
+}
+
+#[test]
+fn transaction_validate_rejects_zero_value_output() {
+    let transaction = Transaction {
+        txid: "tx1".to_string(),
+        inputs: vec![input("prev", 0)],
+        outputs: vec![output(0, "alice", TxStatus::Unspent)],
+    };
+    assert_eq!(transaction.validate(), Err(BtcLibError::ZeroValueOutput));
+}
+
+#[test]
+fn transaction_hash_material_uses_inputs_and_outputs() {
+    assert_eq!(
+        spend_tx("tx1").hash_material(),
+        "tx:tx1|inputs:coinbase:0;|outputs:1200:bob:unspent;300:alice:spent;"
+    );
+}
+
+#[test]
+fn transaction_hash_hex_matches_sha256() {
+    let transaction = spend_tx("tx1");
+    assert_eq!(
+        transaction.hash_hex(),
+        sha256::digest(transaction.hash_material())
+    );
 }
 
 #[test]
@@ -47,71 +151,52 @@ fn parse_status_rejects_unknown_status() {
 }
 
 #[test]
-fn transaction_new_copies_fields() {
-    let transaction = Transaction::new("tx1", 500, TxStatus::Unspent);
+fn parse_outpoint_parses_previous_txid_and_vout() {
+    assert_eq!(parse_outpoint("abc123:2"), Ok(Some(input("abc123", 2))));
+}
+
+#[test]
+fn parse_outpoint_allows_coinbase_marker() {
+    assert_eq!(parse_outpoint(COINBASE_PREVIOUS_OUTPUT), Ok(None));
+}
+
+#[test]
+fn parse_outpoint_rejects_non_numeric_vout() {
+    assert_eq!(
+        parse_outpoint("abc:not-a-number"),
+        Err(BtcLibError::MalformedData)
+    );
+}
+
+#[test]
+fn parse_transaction_parses_coinbase_row() {
+    let transaction = parse_transaction("coinbase,-,alice,5000,unspent").unwrap();
+    assert_eq!(transaction.txid, "coinbase");
+    assert!(transaction.inputs.is_empty());
+    assert_eq!(transaction.outputs.len(), 1);
+    assert_eq!(transaction.outputs[0].recipient, "alice");
+}
+
+#[test]
+fn parse_transaction_parses_regular_row() {
+    let transaction = parse_transaction("tx1,coinbase:0,bob,1200,unspent").unwrap();
     assert_eq!(transaction.txid, "tx1");
-    assert_eq!(transaction.amount_sats, 500);
-    assert_eq!(transaction.status, TxStatus::Unspent);
+    assert_eq!(transaction.inputs, vec![input("coinbase", 0)]);
+    assert_eq!(transaction.outputs[0].value_sats, 1_200);
 }
 
 #[test]
-fn transaction_is_unspent_matches_status() {
-    assert!(tx("tx1", 1, TxStatus::Unspent).is_unspent());
-    assert!(!tx("tx2", 1, TxStatus::Spent).is_unspent());
-}
-
-#[test]
-fn parse_transaction_parses_valid_unspent_row() {
+fn parse_transaction_rejects_wrong_field_count() {
     assert_eq!(
         parse_transaction("tx1,500,unspent"),
-        Ok(tx("tx1", 500, TxStatus::Unspent))
-    );
-}
-
-#[test]
-fn parse_transaction_parses_valid_spent_row() {
-    assert_eq!(
-        parse_transaction("tx2,200,spent"),
-        Ok(tx("tx2", 200, TxStatus::Spent))
-    );
-}
-
-#[test]
-fn parse_transaction_trims_fields() {
-    assert_eq!(
-        parse_transaction(" tx1 , 500 , Unspent "),
-        Ok(tx("tx1", 500, TxStatus::Unspent))
-    );
-}
-
-#[test]
-fn parse_transaction_rejects_missing_field() {
-    assert_eq!(
-        parse_transaction("tx1,500"),
         Err(BtcLibError::MalformedData)
     );
 }
 
 #[test]
-fn parse_transaction_rejects_extra_field() {
+fn parse_transaction_rejects_noncoinbase_without_input() {
     assert_eq!(
-        parse_transaction("tx1,500,unspent,extra"),
-        Err(BtcLibError::MalformedData)
-    );
-}
-
-#[test]
-fn parse_transaction_rejects_empty_txid() {
-    assert_eq!(
-        parse_transaction(",500,unspent"),
-        Err(BtcLibError::MalformedData)
-    );
-}
-
-#[test]
-fn parse_transaction_rejects_empty_amount() {
-    assert_eq!(
-        parse_transaction("tx1,,unspent"),
+        parse_transaction("tx1,-,bob,1200,unspent"),
         Err(BtcLibError::MalformedData)
     );
 }
@@ -119,7 +204,7 @@ fn parse_transaction_rejects_empty_amount() {
 #[test]
 fn parse_transaction_rejects_invalid_amount() {
     assert_eq!(
-        parse_transaction("tx1,not-a-number,unspent"),
+        parse_transaction("tx1,coinbase:0,bob,not-a-number,unspent"),
         Err(BtcLibError::MalformedData)
     );
 }
@@ -127,28 +212,14 @@ fn parse_transaction_rejects_invalid_amount() {
 #[test]
 fn parse_transaction_rejects_zero_amount() {
     assert_eq!(
-        parse_transaction("tx1,0,unspent"),
-        Err(BtcLibError::MalformedData)
-    );
-}
-
-#[test]
-fn parse_transaction_rejects_invalid_status() {
-    assert_eq!(
-        parse_transaction("tx1,500,pending"),
+        parse_transaction("tx1,coinbase:0,bob,0,unspent"),
         Err(BtcLibError::MalformedData)
     );
 }
 
 #[test]
 fn parse_transaction_does_not_panic_on_bad_rows() {
-    for row in [
-        "",
-        "tx1",
-        "tx1,abc,spent",
-        "tx1,1,unknown",
-        "tx1,1,spent,extra",
-    ] {
+    for row in ["", "tx1", "tx1,-,bob,0,spent", "tx1,abc:bad,bob,1,spent"] {
         let result = std::panic::catch_unwind(|| parse_transaction(row));
         assert!(result.is_ok(), "parser panicked for row: {row}");
     }
@@ -156,140 +227,41 @@ fn parse_transaction_does_not_panic_on_bad_rows() {
 
 #[test]
 fn parse_transactions_parses_many_rows() {
-    assert_eq!(
-        parse_transactions(&["tx1,500,unspent", "tx2,200,spent"]),
-        Ok(vec![
-            tx("tx1", 500, TxStatus::Unspent),
-            tx("tx2", 200, TxStatus::Spent)
-        ])
-    );
+    let transactions = parse_transactions(&[
+        "coinbase,-,alice,5000,unspent",
+        "tx1,coinbase:0,bob,1200,unspent",
+    ])
+    .unwrap();
+    assert_eq!(transactions.len(), 2);
+    assert_eq!(transactions[1].txid, "tx1");
 }
 
 #[test]
-fn parse_transactions_returns_error_if_any_row_is_invalid() {
+fn parse_transactions_returns_first_error() {
     assert_eq!(
-        parse_transactions(&["tx1,500,unspent", "broken"]),
+        parse_transactions(&["coinbase,-,alice,5000,unspent", "broken"]),
         Err(BtcLibError::MalformedData)
     );
 }
 
 #[test]
-fn parse_transactions_returns_empty_vec_for_empty_input() {
-    assert_eq!(parse_transactions(&[]), Ok(vec![]));
+fn valid_transactions_only_filters_bad_rows() {
+    let transactions = valid_transactions_only(&[
+        "coinbase,-,alice,5000,unspent",
+        "broken",
+        "tx1,coinbase:0,bob,1200,unspent",
+    ]);
+    assert_eq!(transactions.len(), 2);
 }
 
 #[test]
-fn valid_transactions_only_filters_invalid_rows() {
-    assert_eq!(
-        valid_transactions_only(&["tx1,500,unspent", "broken", "tx2,200,spent"]),
-        vec![
-            tx("tx1", 500, TxStatus::Unspent),
-            tx("tx2", 200, TxStatus::Spent)
-        ]
-    );
+fn block_transaction_count_counts_transactions() {
+    assert_eq!(sample_block().transaction_count(), 3);
 }
 
 #[test]
-fn valid_transactions_only_returns_empty_vec_when_none_are_valid() {
-    assert!(valid_transactions_only(&["", "broken", "tx1,0,spent"]).is_empty());
-}
-
-#[test]
-fn io_errors_convert_to_btclib_error() {
-    let error = io::Error::new(io::ErrorKind::Other, "disk full");
-    match BtcLibError::from(error) {
-        BtcLibError::Io(message) => assert!(message.contains("disk full")),
-        other => panic!("expected Io error, got {other:?}"),
-    }
-}
-
-#[test]
-fn hash_material_uses_txid_amount_and_status_for_unspent() {
-    assert_eq!(
-        tx("tx1", 500, TxStatus::Unspent).hash_material(),
-        "tx1:500:unspent"
-    );
-}
-
-#[test]
-fn hash_material_uses_txid_amount_and_status_for_spent() {
-    assert_eq!(
-        tx("tx2", 25, TxStatus::Spent).hash_material(),
-        "tx2:25:spent"
-    );
-}
-
-#[test]
-fn toy_hash_hashes_hash_material() {
-    let transaction = tx("tx1", 500, TxStatus::Unspent);
-    assert_eq!(transaction.toy_hash(), expected_hash("tx1:500:unspent"));
-}
-
-#[test]
-fn hash_all_hashes_each_item() {
-    let transactions = [
-        tx("tx1", 500, TxStatus::Unspent),
-        tx("tx2", 25, TxStatus::Spent),
-    ];
-    assert_eq!(
-        hash_all(&transactions),
-        vec![
-            expected_hash("tx1:500:unspent"),
-            expected_hash("tx2:25:spent")
-        ]
-    );
-}
-
-#[test]
-fn validate_accepts_valid_transaction() {
-    assert_eq!(tx("tx1", 500, TxStatus::Unspent).validate(), Ok(()));
-}
-
-#[test]
-fn validate_rejects_empty_txid() {
-    assert_eq!(
-        tx("", 500, TxStatus::Unspent).validate(),
-        Err(BtcLibError::MalformedData)
-    );
-}
-
-#[test]
-fn validate_rejects_zero_amount() {
-    assert_eq!(
-        tx("tx1", 0, TxStatus::Unspent).validate(),
-        Err(BtcLibError::MalformedData)
-    );
-}
-
-#[test]
-fn validate_all_accepts_all_valid_items() {
-    assert_eq!(validate_all(&sample_transactions()), Ok(()));
-}
-
-#[test]
-fn validate_all_rejects_first_invalid_item() {
-    let transactions = [tx("tx1", 1, TxStatus::Unspent), tx("", 2, TxStatus::Spent)];
-    assert_eq!(validate_all(&transactions), Err(BtcLibError::MalformedData));
-}
-
-#[test]
-fn total_unspent_sums_only_unspent_transactions() {
-    assert_eq!(total_unspent(&sample_transactions()), 1_200);
-}
-
-#[test]
-fn find_by_txid_returns_matching_transaction() {
-    assert_eq!(
-        find_by_txid(&sample_transactions(), "tx2")
-            .unwrap()
-            .amount_sats,
-        200
-    );
-}
-
-#[test]
-fn find_by_txid_returns_none_when_missing() {
-    assert!(find_by_txid(&sample_transactions(), "missing").is_none());
+fn block_total_output_value_sums_transactions() {
+    assert_eq!(sample_block().total_output_value(), 8_000);
 }
 
 #[test]
@@ -297,8 +269,8 @@ fn require_transaction_returns_matching_transaction() {
     assert_eq!(
         require_transaction(&sample_transactions(), "tx1")
             .unwrap()
-            .status,
-        TxStatus::Unspent
+            .txid,
+        "tx1"
     );
 }
 
@@ -311,27 +283,89 @@ fn require_transaction_returns_error_when_missing() {
 }
 
 #[test]
-fn summarize_amounts_counts_and_sums_by_status() {
+fn block_validate_accepts_good_block() {
+    assert_eq!(sample_block().validate(), Ok(()));
+}
+
+#[test]
+fn block_validate_rejects_empty_block() {
+    let block = Block {
+        transactions: vec![],
+        ..sample_block()
+    };
+    assert_eq!(block.validate(), Err(BtcLibError::EmptyBlock));
+}
+
+#[test]
+fn block_validate_rejects_duplicate_txids() {
+    let block = Block {
+        transactions: vec![spend_tx("tx1"), spend_tx("tx1")],
+        ..sample_block()
+    };
+    assert_eq!(block.validate(), Err(BtcLibError::DuplicateTxId));
+}
+
+#[test]
+fn block_hash_material_uses_header_and_txids() {
+    assert_eq!(
+        sample_block().hash_material(),
+        "block:block-1|prev:prev|height:1|txs:coinbase;tx1;tx2;"
+    );
+}
+
+#[test]
+fn build_block_from_rows_parses_and_validates_block() {
+    let block = build_block_from_rows(
+        header("block-rows"),
+        &[
+            "coinbase,-,alice,5000,unspent",
+            "tx1,coinbase:0,bob,1200,unspent",
+        ],
+        2,
+        Network::Regtest,
+    )
+    .unwrap();
+    assert_eq!(block.transaction_count(), 2);
+}
+
+#[test]
+fn hash_all_hashes_transactions() {
+    let transactions = [spend_tx("tx1"), spend_tx("tx2")];
+    assert_eq!(
+        hash_all(&transactions),
+        vec![transactions[0].hash_hex(), transactions[1].hash_hex()]
+    );
+}
+
+#[test]
+fn decode_hash_hex_accepts_valid_sha256_hex() {
+    let hash = sha256::digest("tx1");
+    assert_eq!(decode_hash_hex(&hash).unwrap().len(), 32);
+}
+
+#[test]
+fn decode_hash_hex_rejects_invalid_hash_hex() {
+    assert_eq!(decode_hash_hex("not-a-hash"), Err(BtcLibError::InvalidHash));
+}
+
+#[test]
+fn summarize_amounts_sums_outputs_by_status() {
     assert_eq!(
         summarize_amounts(&sample_transactions()),
         AmountSummary {
-            count: 3,
-            total_sats: 1_400,
-            spent_sats: 200,
-            unspent_sats: 1_200,
+            output_count: 5,
+            total_sats: 8_000,
+            spent_sats: 600,
+            unspent_sats: 7_400,
         }
     );
 }
 
 #[test]
-fn summarize_amounts_returns_zero_summary_for_empty_input() {
-    assert_eq!(
-        summarize_amounts(&[]),
-        AmountSummary {
-            count: 0,
-            total_sats: 0,
-            spent_sats: 0,
-            unspent_sats: 0,
-        }
-    );
+fn io_errors_convert_to_btclib_error() {
+    let error = io::Error::new(io::ErrorKind::Other, "disk full");
+    match BtcLibError::from(error) {
+        BtcLibError::Io(message) => assert!(message.contains("disk full")),
+        other => panic!("expected Io error, got {other:?}"),
+    }
 }

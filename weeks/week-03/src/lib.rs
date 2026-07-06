@@ -1,6 +1,9 @@
 #![allow(unused_variables)]
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Network {
     Mainnet,
     Testnet,
@@ -8,13 +11,13 @@ pub enum Network {
     Regtest,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TxStatus {
     Spent,
     Unspent,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValidationError {
     EmptyTxId,
     MissingInputs,
@@ -24,27 +27,28 @@ pub enum ValidationError {
     DuplicateTxId,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TxInput {
     pub previous_txid: String,
     pub previous_vout: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TxOutput {
     pub value_sats: u64,
+    pub unique_id: Uuid,
     pub recipient: String,
     pub status: TxStatus,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
     pub txid: String,
     pub inputs: Vec<TxInput>,
     pub outputs: Vec<TxOutput>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockHeader {
     pub block_hash: String,
     pub previous_block_hash: String,
@@ -53,7 +57,7 @@ pub struct BlockHeader {
     pub nonce: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
     pub transactions: Vec<Transaction>,
@@ -82,9 +86,10 @@ impl TxOutput {
     pub fn new(value_sats: u64, recipient: &str, status: TxStatus) -> Self {
         // Steps:
         // 1. Store `value_sats` unchanged.
-        // 2. Convert `recipient` into an owned `String`.
-        // 3. Store `status` unchanged.
-        // 4. Return a `TxOutput`.
+        // 2. Generate a fresh `Uuid` with `Uuid::new_v4()` for `unique_id`.
+        // 3. Convert `recipient` into an owned `String`.
+        // 4. Store `status` unchanged.
+        // 5. Return a `TxOutput`.
         todo!()
     }
 
