@@ -1,0 +1,52 @@
+use tokio::sync::{mpsc, oneshot};
+
+use crate::{NodeError, NodeRequest, NodeResponse, NodeState};
+
+pub struct NodeCommand {
+    pub request: NodeRequest,
+    pub response: oneshot::Sender<NodeResponse>,
+}
+
+/// Apply one request to node state and return a response.
+pub fn handle_request(state: &mut NodeState, request: NodeRequest) -> NodeResponse {
+    // Steps:
+    // 1. Return `Pong` for `Ping`.
+    // 2. Return current height or tip for height/tip requests.
+    // 3. Look up blocks for `GetBlock`.
+    // 4. Add peers for `AddPeer`.
+    // 5. Validate and append blocks for `SubmitBlock`.
+    // 6. Never panic for malformed state; return `Rejected` or `Error`.
+    todo!()
+}
+
+/// Run a state manager task that serializes access to `NodeState`.
+pub async fn run_state_manager(mut state: NodeState, mut receiver: mpsc::Receiver<NodeCommand>) {
+    // Steps:
+    // 1. Receive `NodeCommand` values until the channel closes.
+    // 2. Handle each request with `handle_request`.
+    // 3. Send the response through the command's oneshot sender.
+    // 4. Ignore send failures because the caller may have timed out or dropped.
+    todo!()
+}
+
+/// Spawn a state manager and return a bounded command sender.
+pub fn spawn_state_manager(state: NodeState, capacity: usize) -> mpsc::Sender<NodeCommand> {
+    // Steps:
+    // 1. Create a bounded channel with the requested capacity.
+    // 2. Spawn `run_state_manager(state, receiver)` on Tokio.
+    // 3. Return the sender.
+    todo!()
+}
+
+/// Send one request to the state manager and wait for its response.
+pub async fn send_request(
+    sender: &mpsc::Sender<NodeCommand>,
+    request: NodeRequest,
+) -> Result<NodeResponse, NodeError> {
+    // Steps:
+    // 1. Create a oneshot response channel.
+    // 2. Send `NodeCommand { request, response }` through `sender`.
+    // 3. Map closed mpsc or oneshot channels to `NodeError::ChannelClosed`.
+    // 4. Return the node response.
+    todo!()
+}

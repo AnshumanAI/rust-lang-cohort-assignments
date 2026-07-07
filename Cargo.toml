@@ -4,5 +4,9 @@ members = [
     "weeks/week-02",
     "weeks/week-03",
     "weeks/week-04",
+    "weeks/week-05",
+    "weeks/week-06",
+    "weeks/week-07",
+    "weeks/week-08",
 ]
 resolver = "2"

@@ -363,7 +363,7 @@ fn summarize_amounts_sums_outputs_by_status() {
 
 #[test]
 fn io_errors_convert_to_btclib_error() {
-    let error = io::Error::new(io::ErrorKind::Other, "disk full");
+    let error = io::Error::other("disk full");
     match BtcLibError::from(error) {
         BtcLibError::Io(message) => assert!(message.contains("disk full")),
         other => panic!("expected Io error, got {other:?}"),
