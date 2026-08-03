@@ -5,8 +5,8 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Format and test
+  format:
+    name: Format
     runs-on: ubuntu-latest
 
     steps:
@@ -16,13 +16,77 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run tests
-        run: cargo test --workspace --all-targets
+  test:
+    name: Test ${{ matrix.week }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - week: week-01
+            package: week_01_foundations
+          - week: week-02
+            package: week_02_ownership
+          - week: week-03
+            package: week_03_modeling
+          - week: week-04
+            package: week_04_errors_traits
+          - week: week-05
+            package: week_05_persistence
+          - week: week-06
+            package: week_06_miner
+          - week: week-07
+            package: week_07_async_node
+          - week: week-08
+            package: week_08_wallet_integration
 
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run week tests
+        run: cargo test -p ${{ matrix.package }} --all-targets
+
+  clippy:
+    name: Clippy ${{ matrix.week }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - week: week-01
+            package: week_01_foundations
+          - week: week-02
+            package: week_02_ownership
+          - week: week-03
+            package: week_03_modeling
+          - week: week-04
+            package: week_04_errors_traits
+          - week: week-05
+            package: week_05_persistence
+          - week: week-06
+            package: week_06_miner
+          - week: week-07
+            package: week_07_async_node
+          - week: week-08
+            package: week_08_wallet_integration
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Run week clippy
+        run: cargo clippy -p ${{ matrix.package }} --all-targets -- -D warnings
